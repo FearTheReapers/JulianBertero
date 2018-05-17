@@ -63,6 +63,7 @@ class SimpleAgent(base_agent.BaseAgent):
                 self.scv_selected = True
 
                 return actions.FunctionCall(_SELECT_POINT, [_NOT_QUEUED, target])
+
             elif _BUILD_SUPPLYDEPOT in obs.observation["available_actions"]:
                 unit_type = obs.observation["screen"][_UNIT_TYPE]
                 unit_y, unit_x = (unit_type == _TERRAN_COMMANDCENTER).nonzero()
@@ -73,27 +74,50 @@ class SimpleAgent(base_agent.BaseAgent):
 
                 return actions.FunctionCall(_BUILD_SUPPLYDEPOT, [_NOT_QUEUED, target])
 
-        elif not self.barracks_built:
-            if _BUILD_BARRACKS in obs.observation["available_actions"]:
-                unit_type = obs.observation["screen"][_UNIT_TYPE]
-                unit_y, unit_x = (unit_type == _TERRAN_COMMANDCENTER).nonzero()
 
-                target = self.transformLocation(int(unit_x.mean()), 20, int(unit_y.mean()), 0)
+            elif not self.refinery_built:
+                if _BUILD_REFINERY in obs.observation["available_actions"]:
+                    unit_type = obs.observation["screen"][_UNIT_TYPE]
+                    unit_y, unit_x = (unit_type == _VESPENE_GEYSER).nonzero()
 
-                self.barracks_built = True
+                    target = self.transformLocation(int(unit_x.mean()), 20, int(unit_y.mean()), 0)
 
-                return actions.FunctionCall(_BUILD_BARRACKS, [_NOT_QUEUED, target])
+                    self.refinery_built = True
 
-        elif not self.refinery_built:
-            if _BUILD_REFINERY in obs.observation["available_actions"]:
-                unit_type = obs.observation["screen"][_UNIT_TYPE]
-                unit_y, unit_x = (unit_type == _VESPENE_GEYSER).nonzero()
+                    return actions.FunctionCall(_BUILD_BARRACKS, [_NOT_QUEUED, target])
 
-                target = self.transformLocation(int(unit_x.mean()), 20, int(unit_y.mean()), 0)
 
-                self.refinery_built = True
+            elif not self.barracks_built:
+                if _BUILD_BARRACKS in obs.observation["available_actions"]:
+                    unit_type = obs.observation["screen"][_UNIT_TYPE]
+                    unit_y, unit_x = (unit_type == _TERRAN_COMMANDCENTER).nonzero()
 
-                return actions.FunctionCall(_BUILD_BARRACKS, [_NOT_QUEUED, target])
+                    target = self.transformLocation(int(unit_x.mean()), 20, int(unit_y.mean()), 0)
+
+                    self.barracks_built = True
+
+                    return actions.FunctionCall(_BUILD_BARRACKS, [_NOT_QUEUED, target])
+                elif not self.barracks_rallied:
+                if not self.barracks_selected:
+                    unit_type = obs.observation["screen"][_UNIT_TYPE]
+                    unit_y, unit_x = (unit_type == _TERRAN_BARRACKS).nonzero()
+
+                    if unit_y.any():
+                        target = [int(unit_x.mean()), int(unit_y.mean())]
+
+                        self.barracks_selected = True
+
+                        return actions.FunctionCall(_SELECT_POINT, [_NOT_QUEUED, target])
+                else:
+                    self.barracks_rallied = True
+
+                    if self.base_top_left:
+                        return actions.FunctionCall(_RALLY_UNITS_MINIMAP, [_NOT_QUEUED, [29, 21]])
+
+                    return actions.FunctionCall(_RALLY_UNITS_MINIMAP, [_NOT_QUEUED, [29, 46]])
+
+            elif obs.observation["player"][_SUPPLY_USED] < obs.observation["player"][_SUPPLY_MAX] and _TRAIN_REAPER in obs.observation["available_actions"]:
+                    return actions.FunctionCall(_TRAIN_REAPER, [_QUEUED])
 
 
 
