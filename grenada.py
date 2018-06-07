@@ -13,10 +13,15 @@ class BoomBot(sc2.BotAI):
     # A bot who will soon learn how to bounce noobs around forever
     def __init__(self):
         self.Chaining = False               # If Chaining Grenades
-        self.Spot = Pointlike((30, 30))
-        self.Destinaton = Point2(self.Spot) # Where we initially move to
-        self.Bomb = Pointlike((32, 32))
+        self.Spot = Pointlike((23, 23))
+        self.Destination = Point2(self.Spot) # Where we initially move to
+        self.Bomb = Pointlike((20, 20))
         self.Target = Point2(self.Bomb)     # Where initial bomb lands
+
+        # state
+        self.Enemy_Units = ()
+        self.Available_Reapers = ()
+        self.Cooldown_Reapers = ()
 
         self.cg = ()                        # Control Groups
 
@@ -27,13 +32,19 @@ class BoomBot(sc2.BotAI):
         self.attack_groups = set()
         self.Ideal_Workers = False
 
+#location randomizer
+    # async def aim(self, Target):
+    #     x = Target.x - .5
+    #     y = Target.y - .5
+    #     rand = random.random() * 100
+    #     randx = (rand/100) + x
+    #     rand = random.random() * 100
+    #     randy = (rand/100) + y
+    #     boom = Pointlike((randx, randy))
+    #     return Point2(boom)
+
     async def on_step(self, iteration):
 
-        current_state = [
-            enemy_units,
-            available_reapers,
-            cooldown_reapers,
-        ]
 
 
         if iteration == 0:
@@ -59,11 +70,11 @@ class BoomBot(sc2.BotAI):
                 await self.build(SUPPLYDEPOT, near=cc.position.towards(self.game_info.map_center, 5))
 
 #build barracks
-        if self.units(BARRACKS).amount < 3 or (self.minerals > 400 and self.units(BARRACKS).amount < 5):
+        if self.units(BARRACKS).amount < 1: # or (self.minerals > 400 and self.units(BARRACKS).amount < 5):
             if self.can_afford(BARRACKS):
                 err = await self.build(BARRACKS, near=cc.position.towards(self.game_info.map_center, 5))
 #train reapers
-        elif self.units(BARRACKS).ready.exists and self.units(REFINERY).ready.exists:
+        elif self.units(BARRACKS).ready.exists and self.units(REFINERY).ready.exists and self.units(REAPER).amount < 1:
             barracks = self.units(BARRACKS).ready
             if self.can_afford(REAPER) and barracks.noqueue:
                 await self.do(barracks.random.train(REAPER))
@@ -81,29 +92,22 @@ class BoomBot(sc2.BotAI):
                 w = self.workers.closer_than(20, a)
                 if w.exists:
                     await self.do(w.random.gather(a))
-            # elif a.assigned_harvesters > a.ideal_harvesters:
-            #     b = self.units(MINERALFIELD)
-            #     scrub = a.assigned_harvesters[0]
-            #     await self.do(scrub.gather(b))
 #send out reapers
-        if self.units(REAPER).idle.amount > 14:
-            # cg = ControlGroup(self.units(REAPER).idle)
-            for reaper in self.units(REAPER):
-                randx = random.random() * 100
-                randy = random.random() * 100
-                cluster = Pointlike((30+(randx/10), 30+(randy/10)))
-                chill = Point2(cluster)
-                await self.do(reaper.move(chill))
-                # abilities = await self.get_available_abilities(reaper)
-                # if AbilityId.HOLDPOSITION in abilities:
-                #     await self.do(reaper(HOLDPOSITION, self.Destinaton))
-#begin chaining, currently off
-        if self.Chaining == True:
-            for reaper in cg:
+        if self.units(REAPER).amount > 0:
+            for reaper in self.units(REAPER).idle:
+            #randomize where bomb lands a bit
+                x = self.Target.x -.5
+                y = self.Target.y -.5
+                rand = random.random() * 100
+                randx = (rand/100) + x
+                rand = random.random() * 100
+                randy = (rand/100) + y
+                lz = Pointlike((randx, randy))
+                boom = Point2(lz)
+            #use grenade
                 abilities = await self.get_available_abilities(reaper)
                 if AbilityId.KD8CHARGE_KD8CHARGE in abilities:
-                    await self.do(reaper(KD8CHARGE_KD8CHARGE, self.Target))
-
+                    await self.do(reaper(KD8CHARGE_KD8CHARGE, boom))
 
 class NoobNoob(sc2.BotAI):
     # NoobNoob is a worker whos fate is to be tossed around by enemy reapers
@@ -130,10 +134,10 @@ class NoobNoob(sc2.BotAI):
         for cc in self.units(UnitTypeId.COMMANDCENTER).ready.noqueue:
             if cc.assigned_harvesters < 12:
                 await self.do(cc.train(SCV))
-
-
-
-
+            # MOAR NOOBS
+        if self.supply_left < 2:
+            if self.can_afford(SUPPLYDEPOT) and self.already_pending(SUPPLYDEPOT) < 2:
+                await self.build(SUPPLYDEPOT, near=cc.position.towards(self.game_info.map_center, 5))
 
 
 
