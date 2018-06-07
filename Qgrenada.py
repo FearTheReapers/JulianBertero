@@ -1,5 +1,9 @@
 import sc2
 import random
+import math
+
+import numpy as np
+import pandas as pd
 
 from sc2.constants import *
 from sc2 import run_game, maps, Race, Difficulty
@@ -9,21 +13,25 @@ from sc2.position import Pointlike, Point2, Point3
 from sc2.units import Units
 from sc2.unit import Unit
 
+
+ACTION_DO_NOTHING = 'donothing'
+ACTION_KD8_CHARGE = 'kd8charge'
+
+smart_actions = [
+    ACTION_DO_NOTHING,
+    ACTION_KD8_CHARGE,
+]
+
+
 class BoomBot(sc2.BotAI):
     # A bot who will soon learn how to bounce noobs around forever
     def __init__(self):
-        self.Chaining = False               # If Chaining Grenades
-        self.Spot = Pointlike((23, 23))
-        self.Destination = Point2(self.Spot) # Where we initially move to
-        self.Bomb = Pointlike((20, 20))
-        self.Target = Point2(self.Bomb)     # Where initial bomb lands
-
-        # state
-        self.Enemy_Units = ()
-        self.Available_Reapers = ()
-        self.Cooldown_Reapers = ()
-
-        self.cg = ()                        # Control Groups
+                                            # Reinforcement Learner
+        self.qlearn = QLearningTable(actions=list(range(len(smart_actions))))
+                                            # State
+        self.prev_score = 0
+        self.prev_action = None
+        self.prev_state = None
 
         self.SCV_counter = 0                # Base Building
         self.refinerys = 0
@@ -32,6 +40,13 @@ class BoomBot(sc2.BotAI):
         self.attack_groups = set()
         self.Ideal_Workers = False
 
+# Old, potentially useful
+
+        # self.Chaining = False               # If Chaining Grenades
+        # self.Spot = Pointlike((23, 23))
+        # self.Destination = Point2(self.Spot) # Where we initially move to
+        # self.Bomb = Pointlike((20, 20))
+        # self.Target = Point2(self.Bomb)     # Where initial bomb lands
 
     # async def aim(self, Target):
     #     x = Target.x - .5
@@ -45,6 +60,62 @@ class BoomBot(sc2.BotAI):
 
     async def on_step(self, iteration):
 
+        Available_Reapers = []
+        Cooldown_Reapers = []
+        Enemy_Units = []
+
+
+        for reaper in self.units(REAPER):
+            abilities = await self.get_available_abilities(reaper)
+            if AbilityId.KD8CHARGE_KD8CHARGE in abilities:
+                Available_Reapers.append(reaper)
+            else:
+                Cooldown_Reapers.append(reaper)
+        for worker in self.units.enemy:
+            if worker.is_enemy == True:
+                Enemy_Units.append(worker)
+
+        print(len(Enemy_Units))
+        current_state = [
+            Available_Reapers,
+            Cooldown_Reapers,
+            Enemy_Units,
+        ]
+        reward = 0
+        if self.prev_action != None:
+
+            for worker in Enemy_Units:
+                if worker.health < worker.health_max:
+                    reward += (worker.health_max - worker.health)
+
+            self.qlearn.learn(str(self.prev_state), self.prev_action, reward, str(current_state))
+
+        rl_action = self.qlearn.choose_action(str(current_state))
+        smart_action = smart_actions[rl_action]
+
+        self.prev_score = reward
+        self.prev_state = current_state
+        self.prev_action = rl_action
+
+        if smart_action == ACTION_DO_NOTHING:
+            for reaper in self.units(REAPER):
+                await self.do(reaper(STOP, reaper.position))
+
+        if smart_action == ACTION_KD8_CHARGE:
+            if len(Available_Reapers) > 0: #len(Enemy_Units) > 0 and
+                targetx = random.randrange(0, 63)
+                targety = random.randrange(0, 63)
+                target = Pointlike((targetx, targety))
+                bomb = Point2(target)
+                reaper = Available_Reapers[0]
+                await self.do(reaper(KD8CHARGE_KD8CHARGE, bomb))
+            else:
+                for reaper in Available_Reapers:
+                    targetx = random.randrange(0, 63)
+                    targety = random.randrange(0, 63)
+                    target = Pointlike((targetx, targety))
+                    moveto = Point2(target)
+                    await self.do(reaper.move(moveto))
 
 
         if iteration == 0:
@@ -93,68 +164,6 @@ class BoomBot(sc2.BotAI):
                 if w.exists:
                     await self.do(w.random.gather(a))
 
-#send out reapers
-        # if self.units(REAPER).idle.amount > 14:
-        #     # cg = ControlGroup(self.units(REAPER).idle)
-        #     for reaper in self.units(REAPER):
-        #         randx = random.random() * 100
-        #         randy = random.random() * 100
-        #         cluster = Pointlike((30+(randx/10), 30+(randy/10)))
-        #         chill = Point2(cluster)
-        #         await self.do(reaper.move(chill))
-                # abilities = await self.get_available_abilities(reaper)
-                # if AbilityId.HOLDPOSITION in abilities:
-                #     await self.do(reaper(HOLDPOSITION, self.Destinaton))
-#begin chaining, currently off
-
-
-        if self.units(REAPER).amount > 0:
-            for reaper in self.units(REAPER).idle:
-                if reaper == self.units(REAPER).first:
-                    # if self.units(SCV).enemy:
-                    #     await self.do(reaper.move(self.Destination))
-                # if reaper.position
-            # nade at enemy
-                    if self.units(SCV).enemy.amount > 0:
-                        for worker in self.units(SCV).enemy:
-                            print(worker.position)
-                        # enemy = self.Units.is_enemy.first
-                        # target = enemy.position
-                        # abilities = await self.get_available_abilities(reaper)
-                        # if AbilityId.KD8CHARGE_KD8CHARGE in abilities:
-                        #     await self.do(reaper(KD8CHARGE_KD8CHARGE, target))
-                # nade at default
-                    else:
-                        for reaper in self.units(REAPER).owned:
-                            print(reaper.position)
-                            await self.do(reaper.move(self.Destination))
-                        # target = self.Destination
-                        # abilities = await self.get_available_abilities(reaper)
-                        # if AbilityId.KD8CHARGE_KD8CHARGE in abilities:
-                        #     await self.do(reaper.move(target))
-                # else:
-                #     await self.do(reaper(STOP, self.Target))
-        # if self.units(REAPER).idle.amount > 0 and :
-        #     reaper = self.units(REAPER).idle.first
-        #     abilities = await self.get_available_abilities(reaper)
-        #     # lz = self.aim(self.Target)
-        #
-        #     x = self.Target.x - .5
-        #     y = self.Target.y - .5
-        #     rand = random.random() * 100
-        #     randx = (rand/100) + x
-        #     rand = random.random() * 100
-        #     randy = (rand/100) + y
-        #     boom = Pointlike((randx, randy))
-        #     lz = Point2(boom)
-        #
-        #
-        #     if AbilityId.KD8CHARGE_KD8CHARGE in abilities:
-        #         await self.do(reaper(KD8CHARGE_KD8CHARGE, lz))
-        #         await self.do(reaper.move(self.Destination))
-
-        # smart_actions = [KD8CHARGE_KD8CHARGE]
-
 
 class NoobNoob(sc2.BotAI):
     # NoobNoob is a worker whos fate is to be tossed around by enemy reapers
@@ -185,7 +194,9 @@ class NoobNoob(sc2.BotAI):
         if self.supply_left < 2:
             if self.can_afford(SUPPLYDEPOT) and self.already_pending(SUPPLYDEPOT) < 2:
                 await self.build(SUPPLYDEPOT, near=cc.position.towards(self.game_info.map_center, 5))
-# Stolen from https://github.com/MorvanZhou/Reinforcement-learning-with-tensorflow
+
+
+# From https://github.com/MorvanZhou/Reinforcement-learning-with-tensorflow
 class QLearningTable:
     def __init__(self, actions, learning_rate=0.01, reward_decay=0.9, e_greedy=0.9):
         self.actions = actions
@@ -225,10 +236,6 @@ class QLearningTable:
         if state not in self.q_table.index:
             # append new state to q table
             self.q_table = self.q_table.append(pd.Series([0] * len(self.actions), index=self.q_table.columns, name=state))
-
-
-
-
 
 #start the game
 run_game(maps.get("Simple64"), [
