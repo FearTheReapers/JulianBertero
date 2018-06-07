@@ -71,11 +71,11 @@ class BoomBot(sc2.BotAI):
                 Available_Reapers.append(reaper)
             else:
                 Cooldown_Reapers.append(reaper)
-        for worker in self.units.enemy:
-            if worker.is_enemy == True:
-                Enemy_Units.append(worker)
+        for worker in self.known_enemy_units:
+            # if worker.is_enemy == True:
+            Enemy_Units.append(worker)
 
-        print(len(Enemy_Units))
+
         current_state = [
             Available_Reapers,
             Cooldown_Reapers,
@@ -85,10 +85,16 @@ class BoomBot(sc2.BotAI):
         if self.prev_action != None:
 
             for worker in Enemy_Units:
-                if worker.health < worker.health_max:
-                    reward += (worker.health_max - worker.health)
+                if worker.health % 5 != 0:
+                    reward += -(worker.health * 10)
+                if worker.health % 5 == 0:
+                    reward += (worker.health * 10)
+            for bomber in Cooldown_Reapers:
+                reward += 1000
 
             self.qlearn.learn(str(self.prev_state), self.prev_action, reward, str(current_state))
+
+        print(len(Enemy_Units), len(Available_Reapers), len(Cooldown_Reapers), reward)
 
         rl_action = self.qlearn.choose_action(str(current_state))
         smart_action = smart_actions[rl_action]
@@ -99,22 +105,31 @@ class BoomBot(sc2.BotAI):
 
         if smart_action == ACTION_DO_NOTHING:
             for reaper in self.units(REAPER):
-                await self.do(reaper(STOP, reaper.position))
-
-        if smart_action == ACTION_KD8_CHARGE:
-            if len(Available_Reapers) > 0: #len(Enemy_Units) > 0 and
                 targetx = random.randrange(0, 63)
                 targety = random.randrange(0, 63)
                 target = Pointlike((targetx, targety))
-                bomb = Point2(target)
-                reaper = Available_Reapers[0]
-                await self.do(reaper(KD8CHARGE_KD8CHARGE, bomb))
+                moveto = Point2(target)
+                await self.do(reaper.move(moveto))
+
+        if smart_action == ACTION_KD8_CHARGE:
+
+            targetx = random.randrange(0, 63)
+            targety = random.randrange(0, 63)
+            target = Pointlike((targetx, targety))
+            moveto = Point2(target)
+
+            if len(Available_Reapers) > 0 and len(Enemy_Units) > 0:
+                for reaper in Available_Reapers:
+                    if reaper == Available_Reapers[0]:
+                        bomb = Point3(Enemy_Units[0].position)
+                        reaper = Available_Reapers[0]
+                        await self.do(reaper(KD8CHARGE_KD8CHARGE, bomb))
+                        await self.do(reaper.move(moveto))
+                    else:
+                        await self.do(reaper.move(moveto))
+                        # await self.do(reaper(STOP, reaper.position))
             else:
                 for reaper in Available_Reapers:
-                    targetx = random.randrange(0, 63)
-                    targety = random.randrange(0, 63)
-                    target = Pointlike((targetx, targety))
-                    moveto = Point2(target)
                     await self.do(reaper.move(moveto))
 
 
@@ -141,11 +156,11 @@ class BoomBot(sc2.BotAI):
                 await self.build(SUPPLYDEPOT, near=cc.position.towards(self.game_info.map_center, 5))
 
 #build barracks
-        if self.units(BARRACKS).amount < 1: # or (self.minerals > 400 and self.units(BARRACKS).amount < 5):
+        if self.units(BARRACKS).amount < 3: # or (self.minerals > 400 and self.units(BARRACKS).amount < 5):
             if self.can_afford(BARRACKS):
                 err = await self.build(BARRACKS, near=cc.position.towards(self.game_info.map_center, 5))
 #train reapers
-        elif self.units(BARRACKS).ready.exists and self.units(REFINERY).ready.exists and self.units(REAPER).amount < 1:
+        elif self.units(BARRACKS).ready.exists:
             barracks = self.units(BARRACKS).ready
             if self.can_afford(REAPER) and barracks.noqueue:
                 await self.do(barracks.random.train(REAPER))
@@ -239,6 +254,7 @@ class QLearningTable:
 
 #start the game
 run_game(maps.get("Simple64"), [
-    Bot(Race.Terran, NoobNoob()),
-    Bot(Race.Terran, BoomBot())
+    Bot(Race.Terran, BoomBot()),
+    Bot(Race.Terran, NoobNoob())
+    # Computer(Race.Zerg, Difficulty.Medium)
 ], realtime=False)
